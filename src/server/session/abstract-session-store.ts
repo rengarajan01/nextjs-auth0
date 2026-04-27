@@ -6,6 +6,13 @@ import {
   ResponseCookies
 } from "../cookies.js";
 
+/**
+ * Cookie configuration for the session cookie. Pass to `Auth0Client` via the `session.cookie` option.
+ *
+ * @group Server
+ * @title Session Cookie Options
+ * @order 130
+ */
 export interface SessionCookieOptions {
   /**
    * The name of the session cookie.
@@ -41,6 +48,13 @@ export interface SessionCookieOptions {
   transient?: boolean;
 }
 
+/**
+ * Session lifetime configuration. Pass to `Auth0Client` via the `session` option.
+ *
+ * @group Server
+ * @title Session Configuration
+ * @order 131
+ */
 export interface SessionConfiguration {
   /**
    * A boolean indicating whether rolling sessions should be used or not.
@@ -74,6 +88,14 @@ export interface SessionConfiguration {
   cookie?: SessionCookieOptions;
 }
 
+/**
+ * Options passed to `AbstractSessionStore` subclass constructor.
+ * Extends `SessionConfiguration` with the required `secret` and optional custom `store`.
+ *
+ * @group Server
+ * @title Session Store Options
+ * @order 132
+ */
 export interface SessionStoreOptions extends SessionConfiguration {
   secret: string;
   store?: SessionDataStore;
@@ -83,6 +105,49 @@ export interface SessionStoreOptions extends SessionConfiguration {
 
 const SESSION_COOKIE_NAME = "__session";
 
+/**
+ * Base class for custom session storage. Extend this when you need to persist sessions
+ * to a database, Redis, or any external store instead of the default encrypted cookie.
+ *
+ * Implement three abstract methods: `get`, `set`, and `delete`. Pass your subclass to
+ * `Auth0Client` via the `sessionStore` option.
+ *
+ * @example
+ * ```ts
+ * // lib/redis-session-store.ts
+ * import { AbstractSessionStore } from '@auth0/nextjs-auth0/server';
+ * import type { RequestCookies, ResponseCookies } from '@auth0/nextjs-auth0/server';
+ * import { redis } from '@/lib/redis';
+ *
+ * export class RedisSessionStore extends AbstractSessionStore {
+ *   async get(reqCookies) {
+ *     const sid = reqCookies.get(this.sessionCookieName)?.value;
+ *     if (!sid) return null;
+ *     const raw = await redis.get(sid);
+ *     return raw ? JSON.parse(raw) : null;
+ *   }
+ *
+ *   async set(reqCookies, resCookies, session) {
+ *     const sid = reqCookies.get(this.sessionCookieName)?.value ?? crypto.randomUUID();
+ *     await redis.setex(sid, this.calculateMaxAge(session.internal.createdAt), JSON.stringify(session));
+ *     resCookies.set(this.sessionCookieName, sid, this.cookieConfig);
+ *   }
+ *
+ *   async delete(reqCookies, resCookies) {
+ *     const sid = reqCookies.get(this.sessionCookieName)?.value;
+ *     if (sid) await redis.del(sid);
+ *     resCookies.delete(this.sessionCookieName);
+ *   }
+ * }
+ *
+ * // lib/auth0.ts
+ * export const auth0 = new Auth0Client({ sessionStore: new RedisSessionStore({ secret: '...' }) });
+ * ```
+ *
+ * @group Server
+ * @title Abstract Session Store
+ * @order 15
+ */
 export abstract class AbstractSessionStore {
   public secret: string;
   public sessionCookieName: string;

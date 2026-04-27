@@ -1,6 +1,7 @@
 import { AuthorizationParameters } from "./authorize.js";
 import { ConnectionTokenSet } from "./token-vault.js";
 
+/** @ignore */
 export interface TokenSet {
   accessToken: string;
   idToken?: string;
@@ -12,6 +13,7 @@ export interface TokenSet {
   token_type?: string; // the type of the access token (e.g., "Bearer", "DPoP")
 }
 
+/** @ignore */
 export interface AccessTokenSet {
   accessToken: string;
   scope?: string;
@@ -21,6 +23,14 @@ export interface AccessTokenSet {
   token_type?: string; // the type of the access token (e.g., "Bearer", "DPoP")
 }
 
+/**
+ * The full session object stored by the SDK. Available in `beforeSessionSaved` and
+ * `onCallback` hooks, and returned by `getSession()`.
+ *
+ * @group Server
+ * @title Session Data
+ * @order 40
+ */
 export interface SessionData {
   user: User;
   tokenSet: TokenSet;
@@ -38,10 +48,15 @@ export interface SessionData {
 }
 
 /**
- * Interface for a custom session data store.
+ * Interface for a custom session data store. Implement this and pass it to
+ * `AbstractSessionStore` to use a custom backend (Redis, database, etc.) for sessions.
  *
  * **TTL contract:** every successful write method (`set`, `update`) must reset the session
  * TTL/expiry so that active sessions are not silently expired between requests.
+ *
+ * @group Server
+ * @title Session Data Store
+ * @order 41
  */
 export interface SessionDataStore {
   /**
@@ -57,7 +72,6 @@ export interface SessionDataStore {
   /**
    * Optional: update the session by its ID only if it already exists.
    * Return `true` if updated, `false` if not found.
-   *
    */
   update?(id: string, session: SessionData): Promise<boolean>;
 
@@ -71,15 +85,28 @@ export interface SessionDataStore {
    *
    * **MCD resolver mode:** When using multiple custom domains with a domain resolver,
    * implementations MUST filter on the `iss` field in addition to `sub`/`sid` to
-   * ensure sessions are only deleted for the matching issuer. Custom domains on the
-   * same tenant share signing keys, so failing to filter on `iss` allows a logout
-   * token from one domain to delete sessions created by a different domain.
+   * ensure sessions are only deleted for the matching issuer.
    */
   deleteByLogoutToken?(logoutToken: LogoutToken): Promise<void>;
 }
 
+/**
+ * The logout token shape passed to `SessionDataStore.deleteByLogoutToken()`.
+ *
+ * @group Server
+ * @title Logout Token
+ * @order 42
+ */
 export type LogoutToken = { sub?: string; sid?: string; iss?: string };
 
+/**
+ * The authenticated user object available on `session.user`.
+ * Standard OIDC claims plus any custom claims added via Auth0 Actions.
+ *
+ * @group Server
+ * @title User
+ * @order 43
+ */
 export interface User {
   sub: string;
   name?: string;
@@ -112,6 +139,7 @@ export type {
   Routes
 } from "../server/auth-client.js";
 
+/** @ignore */
 export type { TransactionCookieOptions } from "../server/transaction-store.js";
 
 export type {
@@ -120,62 +148,101 @@ export type {
   SessionStoreOptions
 } from "../server/session/abstract-session-store.js";
 
+/** @ignore */
 export type {
   CookieOptions,
   ReadonlyRequestCookies
 } from "../server/cookies.js";
 
+/** @ignore */
 export type {
   TransactionStoreOptions,
   TransactionState
 } from "../server/transaction-store.js";
 
 /**
- * Logout strategy options for controlling logout endpoint selection.
+ * Controls which logout endpoint the SDK uses.
+ *
+ * - `"auto"` (default): uses OIDC RP-Initiated Logout if the discovery document advertises it, otherwise falls back to the Auth0 `/v2/logout` endpoint.
+ * - `"oidc"`: always use OIDC RP-Initiated Logout.
+ * - `"v2"`: always use the Auth0 `/v2/logout` endpoint.
+ *
+ * @group Server
+ * @title Logout Strategy
+ * @order 44
  */
 export type LogoutStrategy = "auto" | "oidc" | "v2";
 
+/**
+ * Options for initiating a Client-Initiated Backchannel Authentication (CIBA) flow
+ * via `getTokenByBackchannelAuth()`.
+ *
+ * @group Server
+ * @title Backchannel Authentication Options
+ * @order 45
+ */
 export interface BackchannelAuthenticationOptions {
   /**
-   * Human-readable message to be displayed at the consumption device and authentication device.
-   * This allows the user to ensure the transaction initiated by the consumption device is the same that triggers the action on the authentication device.
+   * Human-readable message displayed at both the consumption device and the authentication device.
    */
   bindingMessage: string;
   /**
-   * The login hint to inform which user to use.
+   * The login hint identifying which user to authenticate.
    */
   loginHint: {
     /**
-     * The `sub` claim of the user that is trying to login using Client-Initiated Backchannel Authentication, and to which a push notification to authorize the login will be sent.
+     * The `sub` claim of the user that is trying to login using Client-Initiated Backchannel Authentication.
      */
     sub: string;
   };
   /**
-   * Set a custom expiry time for the CIBA flow in seconds. Defaults to 300 seconds (5 minutes) if not set.
+   * Custom expiry time for the CIBA flow in seconds. Defaults to 300 seconds (5 minutes).
    */
   requestedExpiry?: number;
   /**
-   * Optional authorization details to use Rich Authorization Requests (RAR).
+   * Optional authorization details for Rich Authorization Requests (RAR).
    * @see https://auth0.com/docs/get-started/apis/configure-rich-authorization-requests
    */
   authorizationDetails?: AuthorizationDetails[];
   /**
-   * Authorization Parameters to be sent with the authorization request.
+   * Authorization parameters to be sent with the authorization request.
    */
   authorizationParams?: AuthorizationParameters;
 }
 
+/**
+ * Response from a successful Client-Initiated Backchannel Authentication (CIBA) flow.
+ *
+ * @group Server
+ * @title Backchannel Authentication Response
+ * @order 46
+ */
 export interface BackchannelAuthenticationResponse {
   tokenSet: TokenSet;
   idTokenClaims?: { [key: string]: any };
   authorizationDetails?: AuthorizationDetails[];
 }
 
+/**
+ * Rich Authorization Request detail object.
+ * @see https://auth0.com/docs/get-started/apis/configure-rich-authorization-requests
+ *
+ * @group Server
+ * @title Authorization Details
+ * @order 47
+ */
 export interface AuthorizationDetails {
   readonly type: string;
   readonly [parameter: string]: unknown;
 }
 
+/**
+ * Options for `getAccessToken()`.
+ *
+ * @group Server
+ * @title Get Access Token Options
+ * @order 48
+ */
 export type GetAccessTokenOptions = {
   refresh?: boolean | null;
   scope?: string | null;
@@ -187,6 +254,7 @@ export type GetAccessTokenOptions = {
   audience?: string | null;
 };
 
+/** @ignore */
 export type ProxyOptions = {
   proxyPath: string;
   targetBaseUrl: string;
@@ -232,3 +300,5 @@ export type {
   DiscoveryCacheOptions,
   MCDMetadata
 } from "./mcd.js";
+
+export type { DpopKeyPair, DpopOptions, RetryConfig } from "./dpop.js";

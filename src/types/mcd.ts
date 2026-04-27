@@ -9,53 +9,41 @@ import type { SdkError } from "../errors/sdk-error.js";
 import type { SessionData } from "./index.js";
 
 /**
- * Resolves the Auth0 domain from request context.
- * Called once per SDK operation in resolver mode.
+ * A function that resolves the Auth0 domain from the incoming request context.
+ * Use this instead of a static domain string when serving multiple Auth0 tenants or custom
+ * domains from a single Next.js app (Multiple Custom Domains).
  *
- * Supports both synchronous and asynchronous resolution patterns.
+ * Receives `headers` (always present) and `url` (available in middleware and Pages Router,
+ * `undefined` in Server Components). Throw on failure; the SDK wraps it in `DomainResolutionError`.
  *
- * @param config.headers - Request headers from the current context.
- *   In App Router Server Components / Server Actions: obtained via `headers()` from `next/headers`.
- *   In Middleware / Route Handlers: extracted from `NextRequest`.
- *   In Pages Router (`getServerSideProps`, API Routes): extracted from `IncomingMessage`.
- *
- * @param config.url - The request URL, when available.
- *   In Middleware / Route Handlers: the full `NextRequest.nextUrl` (includes pathname, search params).
- *   In Pages Router: constructed from `IncomingMessage.url` + Host header.
- *   In App Router Server Components / Server Actions: `undefined` (no request object exists).
- *   Use this for B2B multi-tenant routing where the application hostname determines the Auth0 domain.
- *
- * @returns The Auth0 custom domain hostname (e.g., `"auth.brand1.com"`).
- *   Can be returned synchronously or as a Promise.
- *   Must throw on resolution failure — the SDK wraps thrown errors in {@link DomainResolutionError}.
- *
- * @security The resolver is responsible for preventing Host Header injection attacks.
- *   The SDK validates the resolver's output via `normalizeDomain` (hostname format validation),
- *   but input validation and SSRF prevention are the customer's responsibility.
- *
- * @example
- * // Header-based routing (B2C multi-brand)
- * const auth0 = new Auth0Client({
+ * @example Header-based routing (B2C multi-brand)
+ * ```ts
+ * // lib/auth0.ts
+ * export const auth0 = new Auth0Client({
  *   domain: ({ headers }) => {
- *     const host = headers.get("host") ?? "";
- *     if (host.startsWith("brand1.")) return "auth.brand1.com";
- *     if (host.startsWith("brand2.")) return "auth.brand2.com";
- *     return "auth.default.com";
- *   }
+ *     const host = headers.get('host') ?? '';
+ *     if (host.startsWith('brand1.')) return 'auth.brand1.com';
+ *     if (host.startsWith('brand2.')) return 'auth.brand2.com';
+ *     return 'auth.default.com';
+ *   },
  * });
+ * ```
  *
- * @example
- * // Database lookup (B2B SaaS)
- * const auth0 = new Auth0Client({
+ * @example Database lookup (B2B SaaS per-tenant)
+ * ```ts
+ * export const auth0 = new Auth0Client({
  *   domain: async ({ headers }) => {
- *     const tenantId = headers.get("x-tenant-id");
+ *     const tenantId = headers.get('x-tenant-id');
  *     const domain = await db.getAuth0Domain(tenantId);
  *     if (!domain) throw new Error(`Unknown tenant: ${tenantId}`);
  *     return domain;
- *   }
+ *   },
  * });
+ * ```
  *
- * @public
+ * @group Server
+ * @title Domain Resolver
+ * @order 25
  */
 export type DomainResolver = (config: {
   headers: Headers;
@@ -63,55 +51,29 @@ export type DomainResolver = (config: {
 }) => Promise<string> | string;
 
 /**
- * Configuration for the OIDC discovery metadata cache.
- * Applies in both static and resolver modes.
+ * Controls the OIDC discovery metadata cache used in Multiple Custom Domains mode.
  *
- * @property ttl - Time-to-live for cached discovery metadata in seconds. Default: 600 (10 minutes).
- * @property maxEntries - Maximum number of cached issuers. Default: 100. LRU eviction.
+ * - `ttl`: how long to cache discovery metadata for each domain, in seconds. Default: `600` (10 min).
+ * - `maxEntries`: max number of domains to cache concurrently. Default: `100`. Evicts least-recently-used entries.
  *
- * @example
- * ```typescript
- * const auth0 = new Auth0Client({
- *   domain: myDomainResolver,
- *   discoveryCache: {
- *     ttl: 300,        // 5-minute TTL
- *     maxEntries: 50,  // Cache up to 50 issuers
- *   }
- * });
- * ```
+ * Pass to `Auth0Client` via the `discoveryCache` option.
  *
- * @public
+ * @group Server
+ * @title Discovery Cache Options
+ * @order 26
  */
 export interface DiscoveryCacheOptions {
   ttl?: number;
   maxEntries?: number;
 }
 
-/**
- * Metadata for a specific domain and its associated issuer.
- * Stored in session internal state to track which domain authenticated the user.
- *
- * @property domain - The Auth0 domain that authenticated the user
- * @property issuer - The OIDC issuer URL for the domain
- * @internal
- */
+/** @ignore */
 export interface MCDMetadata {
   domain: string;
   issuer: string;
 }
 
-/**
- * Result of a session domain check operation.
- *
- * @field error - SDK error object (null if no error). Includes SessionDomainMismatchError on domain mismatch.
- * @field session - The session data, or null if not found, domain mismatch, or error occurred.
- * @field exists - Whether a session physically exists in the store (true even if domain mismatch or error).
- *                 Distinguishes "no session" from "session found but domain mismatch/error".
- *
- * Callers MUST check error first before using session.
- *
- * @internal
- */
+/** @ignore */
 export interface SessionCheckResult {
   error: SdkError | null;
   session: SessionData | null;

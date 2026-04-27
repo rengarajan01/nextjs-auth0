@@ -143,11 +143,42 @@ import { AbstractSessionStore } from "./session/abstract-session-store.js";
 import { TransactionState, TransactionStore } from "./transaction-store.js";
 import { filterDefaultIdTokenClaims } from "./user.js";
 
+/**
+ * Hook called before the session is saved after a successful login. Use this to modify
+ * the session data, strip unwanted claims, or add custom fields.
+ *
+ * @param session - The session data about to be saved.
+ * @param idToken - The raw ID token string, or `null` if not available.
+ * @returns The (optionally modified) session data to save.
+ *
+ * @example
+ * ```ts
+ * export const auth0 = new Auth0Client({
+ *   async beforeSessionSaved(session, idToken) {
+ *     return {
+ *       ...session,
+ *       user: { ...session.user, role: session.user['https://myapp.com/role'] },
+ *     };
+ *   },
+ * });
+ * ```
+ *
+ * @group Server
+ * @title Before Session Saved Hook
+ * @order 100
+ */
 export type BeforeSessionSavedHook = (
   session: SessionData,
   idToken: string | null
 ) => Promise<SessionData>;
 
+/**
+ * Context object passed to the `onCallback` hook.
+ *
+ * @group Server
+ * @title On Callback Context
+ * @order 102
+ */
 export type OnCallbackContext = {
   /**
    * The type of response expected from the authorization server.
@@ -167,6 +198,32 @@ export type OnCallbackContext = {
    */
   connectedAccount?: CompleteConnectAccountResponse;
 };
+
+/**
+ * Hook called after the authorization callback completes. Use this to handle errors,
+ * customize the redirect, or perform post-login logic.
+ *
+ * @param error - `SdkError` if the callback failed, or `null` on success.
+ * @param ctx - Context including the return URL and connected account info.
+ * @param session - The session data, or `null` if login failed.
+ * @returns A `NextResponse` to send to the user (typically a redirect).
+ *
+ * @example
+ * ```ts
+ * export const auth0 = new Auth0Client({
+ *   async onCallback(error, ctx, session) {
+ *     if (error) {
+ *       return NextResponse.redirect(new URL('/error', ctx.appBaseUrl));
+ *     }
+ *     return NextResponse.redirect(new URL(ctx.returnTo ?? '/', ctx.appBaseUrl));
+ *   },
+ * });
+ * ```
+ *
+ * @group Server
+ * @title On Callback Hook
+ * @order 101
+ */
 export type OnCallbackHook = (
   error: SdkError | null,
   ctx: OnCallbackContext,
@@ -204,6 +261,13 @@ const GRANT_TYPE_FEDERATED_CONNECTION_ACCESS_TOKEN =
 const REQUESTED_TOKEN_TYPE_FEDERATED_CONNECTION_ACCESS_TOKEN =
   "http://auth0.com/oauth/token-type/federated-connection-access-token";
 
+/**
+ * The full set of route paths used by the SDK's built-in handler.
+ *
+ * @group Server
+ * @title Routes
+ * @order 104
+ */
 export interface Routes {
   login: string;
   logout: string;
@@ -217,6 +281,15 @@ export interface Routes {
   mfaVerify: string;
   mfaEnroll: string;
 }
+
+/**
+ * Subset of route paths that can be customized via `Auth0Client` options.
+ * Pass this to the `routes` option to override the default paths.
+ *
+ * @group Server
+ * @title Routes Options
+ * @order 103
+ */
 export type RoutesOptions = Partial<
   Pick<
     Routes,

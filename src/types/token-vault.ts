@@ -1,3 +1,10 @@
+/**
+ * Subject token type URIs for Custom Token Exchange (RFC 8693).
+ *
+ * @group Server
+ * @title Subject Token Types
+ * @order 110
+ */
 export enum SUBJECT_TOKEN_TYPES {
   /**
    * Indicates that the token is an OAuth 2.0 refresh token issued by the given authorization server.
@@ -15,11 +22,15 @@ export enum SUBJECT_TOKEN_TYPES {
 }
 
 /**
- * Options for retrieving a connection access token.
+ * Options for `getAccessTokenForConnection()`.
+ *
+ * @group Server
+ * @title Access Token For Connection Options
+ * @order 52
  */
 export interface AccessTokenForConnectionOptions {
   /**
-   * The connection name for while you want to retrieve the access token.
+   * The connection name for which you want to retrieve the access token.
    */
   connection: string;
 
@@ -40,6 +51,13 @@ export interface AccessTokenForConnectionOptions {
   subject_token_type?: SUBJECT_TOKEN_TYPES;
 }
 
+/**
+ * A connection access token set returned by `getAccessTokenForConnection()`.
+ *
+ * @group Server
+ * @title Connection Token Set
+ * @order 53
+ */
 export interface ConnectionTokenSet {
   accessToken: string;
   scope?: string;
@@ -52,18 +70,20 @@ export interface ConnectionTokenSet {
  * Grant type for Custom Token Exchange as per RFC 8693.
  *
  * @see {@link https://datatracker.ietf.org/doc/html/rfc8693 RFC 8693}
+ *
+ * @group Server
+ * @title Grant Type Custom Token Exchange
+ * @order 111
  */
 export const GRANT_TYPE_CUSTOM_TOKEN_EXCHANGE =
   "urn:ietf:params:oauth:grant-type:token-exchange";
 
 /**
- * Options for Custom Token Exchange.
+ * Options for `customTokenExchange()`.
  *
- * Custom Token Exchange allows exchanging external tokens for Auth0 tokens
- * without a browser redirect. The external token is validated by an Auth0 Action
- * with the Custom Token Exchange trigger.
- *
- * @see {@link https://auth0.com/docs/authenticate/custom-token-exchange Auth0 Custom Token Exchange Documentation}
+ * @group Server
+ * @title Custom Token Exchange Options
+ * @order 54
  */
 export interface CustomTokenExchangeOptions {
   /**
@@ -80,8 +100,6 @@ export interface CustomTokenExchangeOptions {
    * **Validation Rules**:
    * - Must be 10-100 characters
    * - Must be a valid URI (URL or URN format)
-   *
-   * Note: Reserved namespaces are validated by Auth0 when creating CTE profiles.
    *
    * @example 'urn:acme:legacy-token'
    * @example 'https://mycompany.com/token-type/v1'
@@ -103,14 +121,11 @@ export interface CustomTokenExchangeOptions {
 
   /**
    * Organization ID or name for multi-tenant scenarios.
-   * The organization ID will be present in the resulting access token claims.
    */
   organization?: string;
 
   /**
    * Actor token for delegation/impersonation scenarios (RFC 8693).
-   * Represents the identity of the acting party.
-   *
    * If provided, `actorTokenType` is required.
    */
   actorToken?: string;
@@ -123,14 +138,16 @@ export interface CustomTokenExchangeOptions {
   /**
    * Additional custom parameters passed to the token endpoint.
    * Accessible in Auth0 Action via `event.request.body`.
-   *
-   * Use this for custom parameters instead of index signature to avoid TypeScript issues.
    */
   additionalParameters?: Record<string, unknown>;
 }
 
 /**
- * Response from Custom Token Exchange.
+ * Response from `customTokenExchange()`.
+ *
+ * @group Server
+ * @title Custom Token Exchange Response
+ * @order 55
  */
 export interface CustomTokenExchangeResponse {
   /** The access token issued by Auth0 */

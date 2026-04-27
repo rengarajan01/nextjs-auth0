@@ -89,11 +89,7 @@ export interface TransactionStoreOptions {
   enableParallelTransactions?: boolean;
 }
 
-/**
- * TransactionStore is responsible for storing the state required to successfully complete
- * an authentication transaction. The store relies on encrypted, stateless cookies to store
- * the transaction state.
- */
+/** @ignore */
 export class TransactionStore {
   private readonly secret: string;
   private readonly transactionCookiePrefix: string;

@@ -1,123 +1,69 @@
 /**
  * MFA-related types for authentication flow.
  *
- * Response types use snake_case to match Auth0 API conventions (consistent with SPA SDK).
+ * Response types use snake_case to match Auth0 API conventions.
  * SDK-facing types use camelCase.
  */
 
 import type { MfaRequirements } from "../errors/index.js";
 
-/**
- * Auth0 MFA API response types (snake_case).
- * These represent raw API responses before transformation to SDK types.
- */
-
-/**
- * Authenticator response from Auth0 API (snake_case).
- * Maps to {@link Authenticator} in SDK-facing interface.
- */
+/** @ignore */
 export interface AuthenticatorApiResponse {
-  /** Authenticator ID */
   id: string;
-  /** Authenticator type (primary field) */
   authenticator_type: string;
-  /** Direct type value (optional, feature-flagged field) */
   type?: string;
-  /** Whether authenticator is active */
   active: boolean;
-  /** Authenticator name (user-defined or default) */
   name?: string;
-  /** Phone number for OOB (masked) */
   phone_number?: string;
-  /** OOB channel (sms, voice) */
   oob_channel?: string;
-  /** ISO 8601 timestamp of creation */
   created_at?: string;
-  /** ISO 8601 timestamp of last authentication */
   last_auth?: string;
 }
 
-/**
- * Challenge response from Auth0 API (snake_case).
- * Maps to {@link ChallengeResponse} in SDK-facing interface.
- */
+/** @ignore */
 export interface ChallengeApiResponse {
-  /** Challenge type (otp, oob) */
   challenge_type: string;
-  /** OOB code (for oob challenges) */
   oob_code?: string;
-  /** Binding method (for oob challenges) */
   binding_method?: string;
 }
 
-/**
- * Enrollment response from Auth0 API (snake_case).
- * Maps to {@link EnrollmentResponse} in SDK-facing interface.
- */
+/** @ignore */
 export interface EnrollmentApiResponse {
-  /** Authenticator type discriminator */
   authenticator_type: "otp" | "oob" | "email";
-  /** Authenticator ID */
   id: string;
-  /** Recovery codes (first enrollment only) */
   recovery_codes?: string[];
-  /** TOTP secret (otp only - required for otp) */
   secret?: string;
-  /** Barcode URI (otp: otpauth:// format, oob: Guardian/Push QR code) */
   barcode_uri?: string;
-  /** OOB channel (oob only - required for oob) */
   oob_channel?: "sms" | "voice" | "auth0" | "email";
-  /** Authenticator name (oob/email only) */
   name?: string;
-  /** OOB code (oob only - for enrollment verification) */
   oob_code?: string;
-  /** Binding method (oob only - prompt, none) */
   binding_method?: string;
 }
 
-/**
- * Request body for verify endpoint (pre-validation).
- * Contains at least one verification credential.
- */
+/** @ignore */
 export interface VerifyCredentialBody {
-  /** OTP code (6 digits) */
   otp?: string;
-  /** OOB code from challenge */
   oobCode?: string;
-  /** Binding code for OOB */
   bindingCode?: string;
-  /** Recovery code */
   recoveryCode?: string;
 }
 
-/**
- * Grant type for MFA token exchange.
- * Used in token endpoint requests to exchange an mfa_token for access/refresh tokens.
- *
- * @see https://auth0.com/docs/api/authentication#verify-with-one-time-password-otp-
- */
+/** @ignore */
 export const GRANT_TYPE_MFA_OTP = "http://auth0.com/oauth/grant-type/mfa-otp";
 
-/**
- * Grant type for MFA OOB (SMS/Email/Push) verification.
- *
- * @see https://auth0.com/docs/api/authentication#verify-with-oob
- */
+/** @ignore */
 export const GRANT_TYPE_MFA_OOB = "http://auth0.com/oauth/grant-type/mfa-oob";
 
-/**
- * Grant type for MFA recovery code verification.
- *
- * @see https://auth0.com/docs/api/authentication#verify-with-recovery-code
- */
+/** @ignore */
 export const GRANT_TYPE_MFA_RECOVERY_CODE =
   "http://auth0.com/oauth/grant-type/mfa-recovery-code";
 
 /**
- * MFA verify response from Auth0.
- * Uses snake_case to match Auth0 API and SPA SDK conventions.
+ * Raw token response from `auth0.mfa.verify()`. Uses snake_case to match Auth0 API conventions.
  *
- * @see https://auth0.com/docs/api/authentication#verify-with-one-time-password-otp-
+ * @group Server
+ * @title MFA Verify Response
+ * @order 120
  */
 export interface MfaVerifyResponse {
   /** Access token */
@@ -139,7 +85,11 @@ export interface MfaVerifyResponse {
 }
 
 /**
- * Enroll OTP authenticator (TOTP app like Authy/Google Authenticator).
+ * Options for enrolling an OTP (TOTP) authenticator via `auth0.mfa.enroll()`.
+ *
+ * @group Server
+ * @title Enroll OTP Options
+ * @order 62
  */
 export interface EnrollOtpOptions {
   /** Encrypted MFA token */
@@ -149,7 +99,11 @@ export interface EnrollOtpOptions {
 }
 
 /**
- * Enroll OOB authenticator (SMS/Voice/Push/Email).
+ * Options for enrolling an OOB (SMS/Voice/Push/Email) authenticator via `auth0.mfa.enroll()`.
+ *
+ * @group Server
+ * @title Enroll OOB Options
+ * @order 63
  */
 export interface EnrollOobOptions {
   /** Encrypted MFA token */
@@ -160,76 +114,69 @@ export interface EnrollOobOptions {
   oobChannels: ("sms" | "voice" | "auth0" | "email")[];
   /** Phone number in E.164 format (required for sms/voice) */
   phoneNumber?: string;
-  /** Email address (optional for email channel - uses user's email if not provided) */
+  /** Email address (optional for email channel) */
   email?: string;
 }
 
 /**
- * MFA enrollment options (discriminated union).
+ * MFA enrollment options passed to `auth0.mfa.enroll()`. Discriminated union of
+ * `EnrollOtpOptions` and `EnrollOobOptions`.
+ *
+ * @group Server
+ * @title Enroll Options
+ * @order 61
  */
 export type EnrollOptions = EnrollOtpOptions | EnrollOobOptions;
 
-/**
- * OTP enrollment response.
- */
+/** @ignore */
 export interface OtpEnrollmentResponse {
-  /** Authenticator type discriminator */
   authenticatorType: "otp";
-  /** TOTP secret (for QR code generation) */
   secret: string;
-  /** Barcode URI (otpauth:// format) */
   barcodeUri: string;
-  /** Recovery codes (first enrollment only) */
   recoveryCodes?: string[];
-  /** Authenticator ID */
   id: string;
 }
 
-/**
- * OOB enrollment response (SMS/Voice/Push/Email).
- */
+/** @ignore */
 export interface OobEnrollmentResponse {
-  /** Authenticator type discriminator */
   authenticatorType: "oob";
-  /** OOB channel */
   oobChannel: "sms" | "voice" | "auth0" | "email";
-  /** Recovery codes (first enrollment only) */
   recoveryCodes?: string[];
-  /** Authenticator ID */
   id: string;
-  /** Authenticator name */
   name?: string;
-  /** OOB code for enrollment verification */
   oobCode?: string;
-  /** Binding method (prompt, none) */
   bindingMethod?: string;
-  /** Barcode URI (for Guardian/Push QR code) */
   barcodeUri?: string;
 }
 
 /**
- * MFA enrollment response (discriminated union).
+ * Response from `auth0.mfa.enroll()`. Discriminated union by `authenticatorType`.
+ * Contains enrollment details including TOTP secret/barcode URI (OTP) or OOB code (SMS/Push).
+ *
+ * @group Server
+ * @title Enrollment Response
+ * @order 64
  */
 export type EnrollmentResponse = OtpEnrollmentResponse | OobEnrollmentResponse;
 
 /**
- * MFA client interface available in both server and client contexts.
+ * The `auth0.mfa` client interface. Access via `auth0.mfa` on an `Auth0Client` instance.
+ * Use this to drive MFA challenge-response and enrollment flows after receiving a `MfaRequiredError`.
+ *
+ * @group Server
+ * @title MFA Client
+ * @order 57
  */
 export interface MfaClient {
   /**
    * List enrolled authenticators for the user.
-   * Filters by allowed challenge types from mfa_requirements.
-   *
-   * @param options - Options containing encrypted mfaToken
-   * @returns Array of authenticators
+   * @param options - Options containing encrypted mfaToken.
    */
   getAuthenticators(options: { mfaToken: string }): Promise<Authenticator[]>;
 
   /**
    * Initiate an MFA challenge.
-   *
-   * @param options - Challenge options
-   * @returns Challenge response (oobCode, bindingMethod)
+   * @param options - Challenge options including mfaToken, challengeType, and optional authenticatorId.
    */
   challenge(options: {
     mfaToken: string;
@@ -239,83 +186,61 @@ export interface MfaClient {
 
   /**
    * Verify MFA code and complete authentication.
-   * Caches resulting access token in session.
-   *
-   * @param options - Verification options (otp | oobCode+bindingCode | recoveryCode)
-   * @returns Token response with access token, refresh token, etc.
+   * @param options - Verification options: `otp`, `oobCode + bindingCode`, or `recoveryCode`.
    */
   verify(options: VerifyMfaOptions): Promise<MfaVerifyResponse>;
 
   /**
-   * Enroll a new MFA authenticator during initial MFA setup.
-   *
-   * @param options - Enrollment options (otp | oob | email)
-   * @returns Enrollment response with authenticator details and optional recovery codes
+   * Enroll a new MFA authenticator.
+   * @param options - Enrollment options for OTP or OOB authenticator.
    */
   enroll(options: EnrollOptions): Promise<EnrollmentResponse>;
 }
 
 /**
- * MFA authenticator (enrolled factor).
- * Uses camelCase for SDK-facing interface.
+ * An enrolled MFA authenticator returned by `auth0.mfa.getAuthenticators()`.
  *
- * @example
- * ```typescript
- * const authenticators = await mfa.getAuthenticators({ mfaToken });
- *
- * const otpAuth = authenticators.find(a => a.authenticatorType === 'otp');
- * const smsAuth = authenticators.find(a => a.oobChannel === 'sms');
- * ```
+ * @group Server
+ * @title Authenticator
+ * @order 58
  */
 export interface Authenticator {
   /** Authenticator ID */
   id: string;
-  /** Authenticator type (primary field mapped from authenticator_type) */
+  /** Authenticator type (e.g., 'otp', 'oob') */
   authenticatorType: string;
-  /** Direct type value (optional, feature-flagged field from Auth0 API) */
   type?: string;
-  /** Whether authenticator is active */
+  /** Whether this authenticator is active */
   active: boolean;
-  /** Authenticator name (user-defined or default) */
   name?: string;
-  /** Phone number for OOB (masked) */
   phoneNumber?: string;
-  /** OOB channel (sms, voice) */
   oobChannel?: string;
-  /** ISO 8601 timestamp of creation */
   createdAt?: string;
-  /** ISO 8601 timestamp of last authentication */
   lastAuthenticatedAt?: string;
 }
 
 /**
- * MFA challenge response.
- * Uses camelCase for SDK-facing interface.
+ * Response from `auth0.mfa.challenge()`.
  *
- * @example
- * ```typescript
- * const response = await mfa.challenge({
- *   mfaToken,
- *   challengeType: 'oob',
- *   authenticatorId: 'sms|dev_abc123'
- * });
- *
- * console.log(`Challenge type: ${response.challengeType}`);
- * console.log(`OOB code: ${response.oobCode}`);
- * console.log(`Binding method: ${response.bindingMethod}`); // 'prompt'
- * ```
+ * @group Server
+ * @title Challenge Response
+ * @order 59
  */
 export interface ChallengeResponse {
   /** Challenge type (otp, oob) */
   challengeType: string;
   /** OOB code (for oob challenges) */
   oobCode?: string;
-  /** Binding method (for oob challenges) */
+  /** Binding method (for oob challenges, e.g., 'prompt') */
   bindingMethod?: string;
 }
 
 /**
- * Base options for MFA verify.
+ * Base options for `auth0.mfa.verify()`. Extended by each verification method.
+ *
+ * @group Server
+ * @title Verify MFA Options Base
+ * @order 65
  */
 export interface VerifyMfaOptionsBase {
   /** Encrypted MFA token */
@@ -323,92 +248,61 @@ export interface VerifyMfaOptionsBase {
 }
 
 /**
- * Verification with OTP code from authenticator app.
+ * Verification with OTP code from an authenticator app (TOTP).
  *
- * @example
- * ```typescript
- * import { mfa } from '@auth0/nextjs-auth0/client';
- *
- * try {
- *   await mfa.verify({
- *     mfaToken: encryptedToken,
- *     otp: '123456' // From Google Authenticator
- *   });
- *   // User authenticated, access token in session
- * } catch (error) {
- *   if (error instanceof MfaVerifyError) {
- *     console.error('Invalid OTP code');
- *   }
- * }
- * ```
+ * @group Server
+ * @title Verify MFA With OTP Options
+ * @order 66
  */
 export interface VerifyMfaWithOtpOptions extends VerifyMfaOptionsBase {
+  /** 6-digit OTP code from authenticator app */
   otp: string;
 }
 
 /**
  * Verification with OOB code sent via SMS/Email/Push.
  *
- * @example
- * ```typescript
- * // After calling challenge()
- * const challengeResponse = await mfa.challenge({
- *   mfaToken,
- *   challengeType: 'oob',
- *   authenticatorId: 'sms|dev_abc123'
- * });
- *
- * // User receives code "543210"
- * await mfa.verify({
- *   mfaToken,
- *   oobCode: challengeResponse.oobCode,
- *   bindingCode: '543210'
- * });
- * ```
+ * @group Server
+ * @title Verify MFA With OOB Options
+ * @order 67
  */
 export interface VerifyMfaWithOobOptions extends VerifyMfaOptionsBase {
+  /** OOB code from `challenge()` response */
   oobCode: string;
+  /** Binding code received via SMS/Push */
   bindingCode: string;
 }
 
 /**
- * Verification with recovery code (backup).
+ * Verification with a recovery code.
  *
- * @example
- * ```typescript
- * // Using recovery code from enrollment
- * await mfa.verify({
- *   mfaToken,
- *   recoveryCode: 'ABCD-EFGH-IJKL-MNOP'
- * });
- * // Recovery code is single-use and invalidated after verification
- * ```
+ * @group Server
+ * @title Verify MFA With Recovery Code Options
+ * @order 68
  */
 export interface VerifyMfaWithRecoveryCodeOptions extends VerifyMfaOptionsBase {
+  /** Recovery code from enrollment */
   recoveryCode: string;
 }
 
 /**
- * MFA verification options (union type).
+ * Options for `auth0.mfa.verify()`. Discriminated union: pass `otp`, `oobCode + bindingCode`,
+ * or `recoveryCode` depending on the challenge type.
+ *
+ * @group Server
+ * @title Verify MFA Options
+ * @order 60
  */
 export type VerifyMfaOptions =
   | VerifyMfaWithOtpOptions
   | VerifyMfaWithOobOptions
   | VerifyMfaWithRecoveryCodeOptions;
 
-/**
- * MFA context embedded in encrypted token.
- * Self-contained with all information needed for challenge completion.
- */
+/** @ignore */
 export interface MfaContext {
-  /** Raw mfa_token from Auth0 */
   mfaToken: string;
-  /** API identifier that required MFA */
   audience: string;
-  /** Scopes requested */
   scope: string;
-  /** MFA requirements from Auth0 */
   mfaRequirements: MfaRequirements | undefined;
-  /** Timestamp for TTL validation (milliseconds since epoch) */
   createdAt: number;
 }

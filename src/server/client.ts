@@ -76,6 +76,13 @@ import {
   TransactionStore
 } from "./transaction-store.js";
 
+/**
+ * Configuration options for `Auth0Client`. All options can also be set via environment variables.
+ *
+ * @group Server
+ * @title Auth0 Client Options
+ * @order 160
+ */
 export interface Auth0ClientOptions {
   // authorization server configuration
   /**
@@ -420,11 +427,90 @@ export interface Auth0ClientOptions {
   discoveryCache?: DiscoveryCacheOptions;
 }
 
+/**
+ * The incoming request type accepted by `getSession()`, `getAccessToken()`, and similar methods
+ * in the Pages Router. Pass `req` from `getServerSideProps` or an API route handler.
+ *
+ * @group Server
+ * @title Pages Router Request
+ * @order 161
+ */
 export type PagesRouterRequest = IncomingMessage | NextApiRequest;
+
+/**
+ * The response type accepted by `getSession()`, `getAccessToken()`, and `updateSession()` methods
+ * in the Pages Router. Pass `res` from `getServerSideProps` or an API route handler.
+ *
+ * @group Server
+ * @title Pages Router Response
+ * @order 162
+ */
 export type PagesRouterResponse =
   | ServerResponse<IncomingMessage>
   | NextApiResponse;
 
+/**
+ * The main server-side Auth0 client. Create one instance and share it across your entire app.
+ *
+ * The recommended pattern is to create the instance in `lib/auth0.ts` and import it wherever needed:
+ * Server Components, Server Actions, Route Handlers, middleware, and Pages Router API routes.
+ *
+ * **Setup using environment variables (recommended):**
+ *
+ * Set these in `.env.local`:
+ * ```
+ * AUTH0_DOMAIN=your-tenant.us.auth0.com
+ * AUTH0_CLIENT_ID=your_client_id
+ * AUTH0_CLIENT_SECRET=your_client_secret
+ * AUTH0_SECRET=a_32_byte_hex_secret
+ * APP_BASE_URL=http://localhost:3000
+ * ```
+ *
+ * Then create the client with no arguments:
+ * ```ts
+ * // lib/auth0.ts
+ * import { Auth0Client } from '@auth0/nextjs-auth0/server';
+ *
+ * export const auth0 = new Auth0Client();
+ * ```
+ *
+ * **Setup passing options directly:**
+ * ```ts
+ * export const auth0 = new Auth0Client({
+ *   domain:       'your-tenant.us.auth0.com',
+ *   clientId:     'YOUR_CLIENT_ID',
+ *   clientSecret: 'YOUR_CLIENT_SECRET',
+ *   secret:       'YOUR_32_BYTE_SECRET',
+ *   appBaseUrl:   'http://localhost:3000',
+ * });
+ * ```
+ *
+ * **Built-in routes (served by `middleware()`):**
+ *
+ * Once you mount `auth0.middleware(req)` in `middleware.ts`, the following routes are handled automatically:
+ *
+ * | Route | Description |
+ * |---|---|
+ * | `GET /auth/login` | Redirects the user to Auth0 to log in. Add `?returnTo=/path` to control the post-login redirect. |
+ * | `GET /auth/logout` | Logs the user out and clears the session. |
+ * | `GET /auth/callback` | Handles the OAuth callback from Auth0 after login. |
+ * | `GET /auth/profile` | Returns the logged-in user's profile as JSON. |
+ * | `GET /auth/access-token` | Returns a fresh access token for the current session as JSON. |
+ * | `POST /auth/backchannel-logout` | Handles Auth0 backchannel logout notifications. |
+ *
+ * To trigger login from a link or button:
+ * ```tsx
+ * <a href="/auth/login">Log in</a>
+ * <a href="/auth/login?returnTo=/dashboard">Log in and go to dashboard</a>
+ * <a href="/auth/logout">Log out</a>
+ * ```
+ *
+ * Route paths can be customized via the `routes` option in `Auth0ClientOptions`.
+ *
+ * @group Initialisation
+ * @title Auth0 Client
+ * @order 1
+ */
 export class Auth0Client {
   private transactionStore: TransactionStore;
   private sessionStore: AbstractSessionStore;
@@ -689,7 +775,34 @@ export class Auth0Client {
   }
 
   /**
-   * middleware mounts the SDK routes to run as a middleware function.
+   * Handles all Auth0 routes (login, logout, callback, profile, access-token) from Next.js middleware.
+   * Call this from `middleware.ts` at the root of your project so every auth route is served automatically.
+   *
+   * @param req - The incoming Next.js request from middleware.
+   *
+   * @returns A `NextResponse` handled by the matching auth route, or a passthrough response for all other routes.
+   *
+   * @throws `DomainResolutionError` (code `"domain_resolution_error"`) if a `DomainResolver` function throws or returns an invalid value. Only applies when using Multiple Custom Domains.
+   * @throws `DomainValidationError` (code `"domain_validation_error"`) if the resolved domain is an IP address, localhost, or contains a path/port. Only applies when using Multiple Custom Domains.
+   *
+   * @example
+   * ```ts
+   * // middleware.ts
+   * import type { NextRequest } from 'next/server';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function middleware(req: NextRequest) {
+   *   return await auth0.middleware(req);
+   * }
+   *
+   * export const config = {
+   *   matcher: [
+   *     // Skip Next.js internals and static files, always run for API routes and pages
+   *     '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)',
+   *   ],
+   * };
+   * ```
+   *
    */
   async middleware(req: Request | NextRequest): Promise<NextResponse> {
     const nextReq = toNextRequest(req);
@@ -701,24 +814,58 @@ export class Auth0Client {
   }
 
   /**
-   * getSession returns the session data for the current request.
+   * Returns the active session, or `null` if the user is not logged in.
    *
-   * This method can be used in Server Components, Server Actions, and Route Handlers in the **App Router**.
+   * **App Router** (Server Components, Server Actions, Route Handlers): call with no arguments.
+   * The SDK reads the session cookie via Next.js `cookies()` automatically.
+   *
+   * **Pages Router / middleware**: pass `req` so the SDK can read cookies from the request.
+   *
+   * The session contains:
+   * - `user`: the logged-in user's profile (`sub`, `name`, `email`, `picture`, etc.)
+   * - `tokenSet`: the current access token, its expiry, and scope
+   *
+   * @param req - Pages Router or middleware request. Omit in App Router.
+   *
+   * @returns The session object, or `null` if no active session exists.
+   *
+   * @throws `SessionDomainMismatchError` (code `"session_domain_mismatch"`) if the session was created on a different domain. Treat this the same as a missing session. Only applies when using Multiple Custom Domains.
+   * @throws `IssuerValidationError` (code `"issuer_validation_error"`) if the ID token issuer does not match the resolved domain. Only applies when using Multiple Custom Domains.
+   *
+   * @example App Router page
+   * ```ts
+   * // app/dashboard/page.tsx
+   * import { redirect } from 'next/navigation';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default async function Dashboard() {
+   *   const session = await auth0.getSession();
+   *   if (!session) redirect('/auth/login');
+   *
+   *   return <h1>Welcome, {session.user.name}</h1>;
+   * }
+   * ```
+   *
+   * @example Pages Router API route
+   * ```ts
+   * // pages/api/me.ts
+   * import type { NextApiRequest, NextApiResponse } from 'next';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+   *   const session = await auth0.getSession(req);
+   *   if (!session) return res.status(401).json({ error: 'Not authenticated' });
+   *   res.json({ user: session.user });
+   * }
+   * ```
+   *
    */
   async getSession(): Promise<SessionData | null>;
-
-  /**
-   * getSession returns the session data for the current request.
-   *
-   * This method can be used in middleware and `getServerSideProps`, API routes in the **Pages Router**.
-   */
   async getSession(
     req: PagesRouterRequest | NextRequest
   ): Promise<SessionData | null>;
 
-  /**
-   * getSession returns the session data for the current request.
-   */
+  /** @internal */
   async getSession(
     req?: Request | PagesRouterRequest | NextRequest
   ): Promise<SessionData | null> {
@@ -769,16 +916,57 @@ export class Auth0Client {
   }
 
   /**
-   * getAccessToken returns the access token.
+   * Returns the access token for the current user, refreshing it automatically if expired.
    *
-   * This method can be used in Server Components, Server Actions, and Route Handlers in the **App Router**.
+   * **App Router** (Server Components, Server Actions, Route Handlers): call with no `req`/`res`.
+   * The SDK reads cookies automatically. Note: if a token refresh happens inside a Server Component,
+   * the updated token cannot be persisted because Server Components cannot set cookies. Use middleware
+   * with `getAccessToken(req, res)` when persistence after refresh is required.
    *
-   * NOTE: Server Components cannot set cookies. Calling `getAccessToken()` in a Server Component will cause the access token to be refreshed, if it is expired, and the updated token set will not to be persisted.
-   * It is recommended to call `getAccessToken(req, res)` in the middleware if you need to retrieve the access token in a Server Component to ensure the updated token set is persisted.
-   */
-  /**
-   * @param options Optional configuration for getting the access token.
-   * @param options.refresh Force a refresh of the access token.
+   * **Pages Router / middleware**: pass both `req` and `res` so the refreshed token can be
+   * written back to the session cookie.
+   *
+   * @param req - Pages Router or middleware request. Omit in App Router.
+   * @param res - Pages Router or middleware response. Omit in App Router.
+   * @param options.refresh - Force a refresh even if the token has not expired yet.
+   * @param options.audience - API identifier the token should be issued for.
+   * @param options.scope - Space-separated scopes to request.
+   *
+   * @returns `{ token, expiresAt, scope?, token_type?, audience? }`.
+   *
+   * @throws `AccessTokenError` (code `"missing_session"`) if the user is not authenticated.
+   * @throws `AccessTokenError` (code `"missing_refresh_token"`) if the token is expired and there is no refresh token.
+   * @throws `AccessTokenError` (code `"failed_to_refresh_token"`) if Auth0 rejects the refresh attempt.
+   * @throws `MfaRequiredError` (code `"mfa_required"`) if Auth0 requires MFA step-up before issuing the token. Catch this and use `err.mfa_token` to drive the MFA flow via `auth0.mfa`. The `err.mfa_requirements` property lists available challenge types and enrollment options.
+   *
+   * @example App Router route handler
+   * ```ts
+   * // app/api/data/route.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function GET() {
+   *   const { token } = await auth0.getAccessToken();
+   *   const res = await fetch('https://api.example.com/data', {
+   *     headers: { Authorization: `Bearer ${token}` },
+   *   });
+   *   return Response.json(await res.json());
+   * }
+   * ```
+   *
+   * @example Pages Router API route
+   * ```ts
+   * // pages/api/data.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default async function handler(req, res) {
+   *   const { token } = await auth0.getAccessToken(req, res);
+   *   const apiRes = await fetch('https://api.example.com/data', {
+   *     headers: { Authorization: `Bearer ${token}` },
+   *   });
+   *   res.json(await apiRes.json());
+   * }
+   * ```
+   *
    */
   async getAccessToken(options?: GetAccessTokenOptions): Promise<{
     token: string;
@@ -787,17 +975,6 @@ export class Auth0Client {
     token_type?: string;
     audience?: string;
   }>;
-
-  /**
-   * getAccessToken returns the access token.
-   *
-   * This method can be used in middleware and `getServerSideProps`, API routes in the **Pages Router**.
-   *
-   * @param req The request object.
-   * @param res The response object.
-   * @param options Optional configuration for getting the access token.
-   * @param options.refresh Force a refresh of the access token.
-   */
   async getAccessToken(
     req: PagesRouterRequest | NextRequest,
     res: PagesRouterResponse | NextResponse,
@@ -810,16 +987,7 @@ export class Auth0Client {
     audience?: string;
   }>;
 
-  /**
-   * getAccessToken returns the access token.
-   *
-   * Please note: If you are passing audience, ensure that the used audiences and scopes are
-   * part of the Application's Refresh Token Policies in Auth0 when configuring Multi-Resource Refresh Tokens (MRRT).
-   * {@link https://auth0.com/docs/secure/tokens/refresh-tokens/multi-resource-refresh-token|See Auth0 Documentation on Multi-resource Refresh Tokens}
-   *
-   * NOTE: Server Components cannot set cookies. Calling `getAccessToken()` in a Server Component will cause the access token to be refreshed, if it is expired, and the updated token set will not to be persisted.
-   * It is recommended to call `getAccessToken(req, res)` in the middleware if you need to retrieve the access token in a Server Component to ensure the updated token set is persisted.
-   */
+  /** @internal */
   async getAccessToken(
     arg1?: PagesRouterRequest | NextRequest | GetAccessTokenOptions,
     arg2?: PagesRouterResponse | NextResponse,
@@ -947,45 +1115,55 @@ export class Auth0Client {
   }
 
   /**
-   * Retrieves an access token for a connection.
+   * Returns an access token scoped to a specific social connection (e.g. Google, GitHub).
+   * Use this when you need to call a third-party provider API on behalf of the logged-in user.
    *
-   * This method can be used in Server Components, Server Actions, and Route Handlers in the **App Router**.
+   * **App Router**: call with `options` only. The SDK reads cookies automatically.
    *
-   * NOTE: Server Components cannot set cookies. Calling `getAccessTokenForConnection()` in a Server Component will cause the access token to be refreshed, if it is expired, and the updated token set will not to be persisted.
-   * It is recommended to call `getAccessTokenForConnection(req, res)` in the middleware if you need to retrieve the access token in a Server Component to ensure the updated token set is persisted.
+   * **Pages Router / middleware**: pass `req` and `res` as additional arguments so the refreshed
+   * token can be written back to the session cookie.
+   *
+   * **Prerequisite:** The connection must be enabled on your Auth0 application and the user must
+   * have authorized it during login.
+   *
+   * @param options.connection - The connection name, e.g. `"google-oauth2"` or `"github"`.
+   * @param req - Pages Router or middleware request. Omit in App Router.
+   * @param res - Pages Router or middleware response. Omit in App Router.
+   *
+   * @returns `{ token, expiresAt, scope? }`.
+   *
+   * @throws `AccessTokenForConnectionError` (code `"missing_session"`) if the user is not authenticated.
+   * @throws `AccessTokenForConnectionError` (code `"missing_refresh_token"`) if no refresh token is available to exchange.
+   * @throws `AccessTokenForConnectionError` (code `"failed_to_exchange_refresh_token"`) if Auth0 rejects the token exchange.
+   *
+   * @example
+   * ```ts
+   * // app/api/calendar/route.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function GET() {
+   *   const { token } = await auth0.getAccessTokenForConnection({
+   *     connection: 'google-oauth2',
+   *   });
+   *
+   *   const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+   *     headers: { Authorization: `Bearer ${token}` },
+   *   });
+   *   return Response.json(await res.json());
+   * }
+   * ```
+   *
    */
   async getAccessTokenForConnection(
     options: AccessTokenForConnectionOptions
   ): Promise<{ token: string; expiresAt: number }>;
-
-  /**
-   * Retrieves an access token for a connection.
-   *
-   * This method can be used in middleware and `getServerSideProps`, API routes in the **Pages Router**.
-   */
   async getAccessTokenForConnection(
     options: AccessTokenForConnectionOptions,
     req: PagesRouterRequest | NextRequest | Request | undefined,
     res: PagesRouterResponse | NextResponse | undefined
   ): Promise<{ token: string; expiresAt: number }>;
 
-  /**
-   * Retrieves an access token for a connection.
-   *
-   * This method attempts to obtain an access token for a specified connection.
-   * It first checks if a session exists, either from the provided request or from cookies.
-   * If no session is found, it throws a `AccessTokenForConnectionError` indicating
-   * that the user does not have an active session.
-   *
-   * @param {AccessTokenForConnectionOptions} options - Options for retrieving an access token for a connection.
-   * @param {PagesRouterRequest | NextRequest} [req] - An optional request object from which to extract session information.
-   * @param {PagesRouterResponse | NextResponse} [res] - An optional response object from which to extract session information.
-   *
-   * @throws {AccessTokenForConnectionError} If the user does not have an active session.
-   * @throws {Error} If there is an error during the token exchange process.
-   *
-   * @returns {Promise<{ token: string; expiresAt: number; scope?: string }} An object containing the access token and its expiration time.
-   */
+  /** @internal */
   async getAccessTokenForConnection(
     options: AccessTokenForConnectionOptions,
     req?: PagesRouterRequest | NextRequest | Request,
@@ -1065,30 +1243,39 @@ export class Auth0Client {
   /**
    * Exchanges an external token for Auth0 tokens using Custom Token Exchange (RFC 8693).
    *
-   * This is a server-only method that does NOT modify the session.
-   * The returned tokens can be used independently or stored by the developer.
+   * This is a server-only method. It does not create or modify the user's session; the returned
+   * tokens are for the caller to use directly.
    *
-   * **Note**: CTE tokens are not cached. The caller is responsible for token storage if needed.
+   * @param options.subjectToken - The external token to exchange.
+   * @param options.subjectTokenType - The type URI identifying the token, e.g. `"urn:acme:legacy-token"`.
+   * @param options.audience - The API identifier the resulting access token should be issued for.
+   * @param options.scope - Space-separated scopes to request.
    *
-   * This method can be used in Server Actions, Route Handlers, and API routes.
+   * @returns The exchange response with `accessToken` and optionally `idToken` and `refreshToken`.
    *
-   * @param options - The custom token exchange options
-   * @returns The token exchange response containing access token and optionally id/refresh tokens
-   * @throws {CustomTokenExchangeError} If validation fails or the exchange request fails
+   * @throws `CustomTokenExchangeError` (code `"missing_subject_token"`) if `subjectToken` is empty.
+   * @throws `CustomTokenExchangeError` (code `"invalid_subject_token_type"`) if `subjectTokenType` is not a valid URI.
+   * @throws `CustomTokenExchangeError` (code `"missing_actor_token_type"`) if `actorToken` is provided without `actorTokenType`.
+   * @throws `CustomTokenExchangeError` (code `"exchange_failed"`) if Auth0 rejects the exchange.
    *
    * @example
-   * ```typescript
-   * const result = await auth0.customTokenExchange({
-   *   subjectToken: legacyIdToken,
-   *   subjectTokenType: 'urn:acme:legacy-token',
-   *   audience: 'https://api.example.com',
-   *   scope: 'read:data'
-   * });
+   * ```ts
+   * // app/api/exchange/route.ts
+   * import { auth0 } from '@/lib/auth0';
    *
-   * console.log(result.accessToken);
+   * export async function POST(req: Request) {
+   *   const { legacyToken } = await req.json();
+   *
+   *   const result = await auth0.customTokenExchange({
+   *     subjectToken: legacyToken,
+   *     subjectTokenType: 'urn:acme:legacy-token',
+   *     audience: 'https://api.example.com',
+   *   });
+   *
+   *   return Response.json({ accessToken: result.accessToken });
+   * }
    * ```
    *
-   * @see {@link https://auth0.com/docs/authenticate/custom-token-exchange Auth0 CTE Documentation}
    */
   async customTokenExchange(
     options: CustomTokenExchangeOptions
@@ -1106,39 +1293,43 @@ export class Auth0Client {
   }
 
   /**
-   * MFA API for server-side operations.
+   * Server-side MFA client. Access this when `getAccessToken()` throws a `MfaRequiredError`
+   * and you need to drive the MFA challenge-response flow from the server.
    *
-   * Provides access to MFA methods that require encrypted mfa_token from MfaRequiredError:
-   * - getAuthenticators: List enrolled MFA factors
-   * - challenge: Initiate MFA challenge (OTP/OOB)
-   * - verify: Complete MFA verification
+   * Methods:
+   * - `getAuthenticators({ mfaToken })`: list the user's enrolled MFA factors. Throws `MfaGetAuthenticatorsError` on failure.
+   * - `challenge({ mfaToken, challengeType, authenticatorId? })`: initiate a challenge. Throws `MfaChallengeError` on failure.
+   * - `verify({ mfaToken, otp? | oobCode+bindingCode? | recoveryCode? })`: complete the challenge. Throws `MfaVerifyError` (code `"invalid_grant"`) on wrong code.
+   * - `enroll({ mfaToken, authenticatorTypes, ... })`: enroll a new factor. Throws `MfaEnrollmentError` on failure.
    *
-   * @example Handling MFA required scenario
-   * ```typescript
-   * try {
-   *   const { token } = await auth0.getAccessToken({ audience: 'https://api.example.com' });
-   * } catch (error) {
-   *   if (error instanceof MfaRequiredError) {
-   *     // Get available authenticators
-   *     const authenticators = await auth0.mfa.getAuthenticators({
-   *       mfaToken: error.mfa_token
-   *     });
+   * All `auth0.mfa` methods throw `MfaTokenExpiredError` (code `"mfa_token_expired"`) if the MFA token has expired,
+   * and `MfaTokenInvalidError` (code `"mfa_token_invalid"`) if the token is malformed or encrypted with a different secret.
    *
-   *     // Initiate challenge
-   *     const challenge = await auth0.mfa.challenge({
-   *       mfaToken: error.mfa_token,
-   *       challengeType: 'otp',
-   *       authenticatorId: authenticators[0].id
-   *     });
+   * @example
+   * ```ts
+   * // app/api/token/route.ts
+   * import { auth0 } from '@/lib/auth0';
+   * import { MfaRequiredError } from '@auth0/nextjs-auth0/server';
    *
-   *     // Verify code
-   *     const tokens = await auth0.mfa.verify({
-   *       mfaToken: error.mfa_token,
-   *       otp: '123456'
-   *     });
+   * export async function GET() {
+   *   try {
+   *     const { token } = await auth0.getAccessToken({ audience: 'https://api.example.com' });
+   *     return Response.json({ token });
+   *   } catch (err) {
+   *     if (err instanceof MfaRequiredError) {
+   *       const factors = await auth0.mfa.getAuthenticators({ mfaToken: err.mfa_token });
+   *       const challenge = await auth0.mfa.challenge({
+   *         mfaToken: err.mfa_token,
+   *         challengeType: 'otp',
+   *         authenticatorId: factors[0].id,
+   *       });
+   *       return Response.json({ mfaRequired: true, challenge });
+   *     }
+   *     throw err;
    *   }
    * }
    * ```
+   *
    */
   get mfa(): ServerMfaClient {
     if (!this._mfa) {
@@ -1148,26 +1339,63 @@ export class Auth0Client {
   }
 
   /**
-   * updateSession updates the session of the currently authenticated user. If the user does not have a session, an error is thrown.
+   * Overwrites the current user's session. Throws if no session exists.
    *
-   * This method can be used in middleware and `getServerSideProps`, API routes, and middleware in the **Pages Router**.
+   * **App Router** (Server Actions, Route Handlers): pass the updated `session` object only.
+   * The SDK writes the new session cookie automatically.
+   *
+   * **Pages Router / middleware**: pass `req`, `res`, and the updated `session` so the SDK
+   * can write the cookie to the response.
+   *
+   * @param session - The updated session data. Include the full session shape (spread existing and override fields).
+   * @param req - Pages Router or middleware request. Omit in App Router.
+   * @param res - Pages Router or middleware response. Omit in App Router.
+   *
+   * @throws `Error` if the user is not authenticated.
+   *
+   * @example App Router Server Action
+   * ```ts
+   * // app/actions/update-name.ts
+   * 'use server';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function updateName(name: string) {
+   *   const session = await auth0.getSession();
+   *   if (!session) throw new Error('Not authenticated');
+   *
+   *   await auth0.updateSession({
+   *     ...session,
+   *     user: { ...session.user, name },
+   *   });
+   * }
+   * ```
+   *
+   * @example Pages Router API route
+   * ```ts
+   * // pages/api/update-name.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default async function handler(req, res) {
+   *   const session = await auth0.getSession(req);
+   *   if (!session) return res.status(401).end();
+   *
+   *   await auth0.updateSession(req, res, {
+   *     ...session,
+   *     user: { ...session.user, name: req.body.name },
+   *   });
+   *   res.json({ ok: true });
+   * }
+   * ```
+   *
    */
   async updateSession(
     req: PagesRouterRequest | NextRequest | Request,
     res: PagesRouterResponse | NextResponse | Response,
     session: SessionData
   ): Promise<void>;
-
-  /**
-   * updateSession updates the session of the currently authenticated user. If the user does not have a session, an error is thrown.
-   *
-   * This method can be used in Server Actions and Route Handlers in the **App Router**.
-   */
   async updateSession(session: SessionData): Promise<void>;
 
-  /**
-   * updateSession updates the session of the currently authenticated user. If the user does not have a session, an error is thrown.
-   */
+  /** @internal */
   async updateSession(
     reqOrSession: PagesRouterRequest | NextRequest | Request | SessionData,
     res?: PagesRouterResponse | NextResponse | Response,
@@ -1291,7 +1519,7 @@ export class Auth0Client {
    * - No request (Server Components / Actions): uses next/headers, url is undefined
    *
    * @returns authClient and normalizedReq for downstream use.
-   *   Cookies are NOT included — only getSession needs them, and it handles
+   *   Cookies are NOT included; only getSession needs them, and it handles
    *   cookie extraction internally to avoid eagerly calling cookies() outside
    *   request scope (which would throw in Server Components when called from
    *   methods that don't need cookies, like getAccessToken).
@@ -1329,6 +1557,30 @@ export class Auth0Client {
     return { authClient };
   }
 
+  /**
+   * Initiates a login redirect from a Server Action or Route Handler.
+   * Use when you need to programmatically trigger the login flow rather than
+   * relying on the automatic redirect from `withPageAuthRequired`.
+   *
+   * @param options.returnTo - Where to send the user after login. Defaults to `/`.
+   * @param options.authorizationParameters - Extra parameters to forward to the `/authorize` endpoint.
+   *
+   * @returns A `NextResponse` that redirects the user to the Auth0 login page.
+   *
+   * @example
+   * ```ts
+   * // app/actions/login.ts
+   * 'use server';
+   * import { redirect } from 'next/navigation';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function loginAction() {
+   *   const res = await auth0.startInteractiveLogin({ returnTo: '/dashboard' });
+   *   redirect(res.headers.get('location')!);
+   * }
+   * ```
+   *
+   */
   async startInteractiveLogin(
     options: StartInteractiveLoginOptions = {}
   ): Promise<NextResponse> {
@@ -1338,12 +1590,38 @@ export class Auth0Client {
   }
 
   /**
-   * Authenticates using Client-Initiated Backchannel Authentication and returns the token set and optionally the ID token claims and authorization details.
+   * Authenticates a user via Client-Initiated Backchannel Authentication (CIBA) and returns
+   * the token set once the user approves the request on their device.
    *
-   * This method will initialize the backchannel authentication process with Auth0, and poll the token endpoint until the authentication is complete.
+   * Initiates the backchannel flow and polls Auth0 until the user approves or the request times out.
+   * Does not require the user to be present in the browser session.
    *
-   * Using Client-Initiated Backchannel Authentication requires the feature to be enabled in the Auth0 dashboard.
-   * @see https://auth0.com/docs/get-started/authentication-and-authorization-flow/client-initiated-backchannel-authentication-flow
+   * **Prerequisite:** CIBA must be enabled in the Auth0 dashboard for your application.
+   *
+   * @param options.loginHint - Identifies the user to authenticate.
+   * @param options.scope - Space-separated scopes to request.
+   * @param options.audience - The API identifier the token should be issued for.
+   *
+   * @returns The token set, and optionally ID token claims and authorization details.
+   *
+   * @throws `BackchannelAuthenticationNotSupportedError` (code `"backchannel_authentication_not_supported_error"`) if CIBA is not enabled for your application.
+   * @throws `BackchannelAuthenticationError` (code `"backchannel_authentication_error"`) if Auth0 rejects the request.
+   *
+   * @example
+   * ```ts
+   * // app/api/backchannel/route.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function POST(req: Request) {
+   *   const { email } = await req.json();
+   *   const tokens = await auth0.getTokenByBackchannelAuth({
+   *     loginHint: { format: 'iss_sub', iss: 'https://example.us.auth0.com/', sub: email },
+   *     scope: 'openid profile email',
+   *   });
+   *   return Response.json({ accessToken: tokens.accessToken });
+   * }
+   * ```
+   *
    */
   async getTokenByBackchannelAuth(options: BackchannelAuthenticationOptions) {
     const reqHeaders = await getHeaders();
@@ -1360,15 +1638,33 @@ export class Auth0Client {
   }
 
   /**
-   * Initiates the Connect Account flow to connect a third-party account to the user's profile.
-   * If the user does not have an active session, a `ConnectAccountError` is thrown.
+   * Starts the Connect Account flow, redirecting the user to Auth0 to authorize linking a
+   * third-party social account (e.g. GitHub, Google) to their existing profile.
    *
-   * This method first attempts to obtain an access token with the `create:me:connected_accounts` scope
-   * for the My Account API to create a connected account for the user.
+   * **Prerequisite:** "Offline Access" must be enabled in Connection Permissions for the target
+   * connection. The user must have an active session.
    *
-   * The user will then be redirected to authorize the connection with the third-party provider.
+   * @param options.connection - The connection name, e.g. `"github"` or `"google-oauth2"`.
    *
-   * You must enable `Offline Access` from the Connection Permissions settings to be able to use the connection with Connected Accounts.
+   * @returns A `NextResponse` that redirects the user to Auth0 to authorize the connection.
+   *
+   * @throws `ConnectAccountError` (code `"missing_session"`) if the user is not logged in.
+   * @throws `ConnectAccountError` (code `"failed_to_initiate"`) if starting the connect flow fails. Check `err.cause` for the underlying `MyAccountApiError`.
+   * @throws `ConnectAccountError` (code `"failed_to_complete"`) if completing the connect flow fails. Check `err.cause` for the underlying `MyAccountApiError`.
+   *
+   * @example
+   * ```ts
+   * // app/actions/connect-github.ts
+   * 'use server';
+   * import { redirect } from 'next/navigation';
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export async function connectGitHub() {
+   *   const res = await auth0.connectAccount({ connection: 'github' });
+   *   redirect(res.headers.get('location')!);
+   * }
+   * ```
+   *
    */
   async connectAccount(options: ConnectAccountOptions): Promise<NextResponse> {
     const reqHeaders = await getHeaders();
@@ -1409,13 +1705,47 @@ export class Auth0Client {
     return connectAccountResponse;
   }
 
-  // Pages Router overload - no arguments
-  withPageAuthRequired(): PageRoute<{ [key: string]: any }, ParsedUrlQuery>;
-  // Pages Router overload - with options
-  withPageAuthRequired<
-    P extends { [key: string]: any } = { [key: string]: any },
-    Q extends ParsedUrlQuery = ParsedUrlQuery
-  >(opts: WithPageAuthRequiredPageRouterOptions<P, Q>): PageRoute<P, Q>;
+  /**
+   * Protects a page from unauthenticated access. Redirects to the login page and returns the
+   * user to the original URL after a successful login.
+   *
+   * **App Router**: pass an async page function. The SDK invokes it only when a session exists.
+   * Because Server Components do not know their own URL, pass `returnTo` explicitly if you need
+   * the user to land back on the same page after login.
+   *
+   * **Pages Router**: call with no arguments (or an options object) to protect `getServerSideProps`.
+   *
+   * @param fn - App Router: the async page component to wrap.
+   * @param opts.returnTo - Where to send the user after login. App Router default: `/`. Pages Router default: current URL.
+   * @param opts.getServerSideProps - Pages Router: your own `getServerSideProps` to run after the auth check.
+   *
+   * @example App Router
+   * ```ts
+   * // app/dashboard/page.tsx
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default auth0.withPageAuthRequired(
+   *   async function Dashboard() {
+   *     const session = await auth0.getSession();
+   *     return <h1>Welcome, {session!.user.name}</h1>;
+   *   },
+   *   { returnTo: '/dashboard' }
+   * );
+   * ```
+   *
+   * @example Pages Router
+   * ```ts
+   * // pages/dashboard.tsx
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export const getServerSideProps = auth0.withPageAuthRequired();
+   *
+   * export default function Dashboard({ user }) {
+   *   return <h1>Welcome, {user.name}</h1>;
+   * }
+   * ```
+   *
+   */
   // App Router overload - with component function
   withPageAuthRequired<
     P extends AppRouterPageRouteOpts = AppRouterPageRouteOpts
@@ -1423,6 +1753,13 @@ export class Auth0Client {
     fn: AppRouterPageRoute<P>,
     opts?: WithPageAuthRequiredAppRouterOptions<P>
   ): AppRouterPageRoute<P>;
+  // Pages Router overload - no arguments
+  withPageAuthRequired(): PageRoute<{ [key: string]: any }, ParsedUrlQuery>;
+  // Pages Router overload - with options
+  withPageAuthRequired<
+    P extends { [key: string]: any } = { [key: string]: any },
+    Q extends ParsedUrlQuery = ParsedUrlQuery
+  >(opts: WithPageAuthRequiredPageRouterOptions<P, Q>): PageRoute<P, Q>;
   // Implementation
   withPageAuthRequired(
     fnOrOpts?: WithPageAuthRequiredPageRouterOptions | AppRouterPageRoute,
@@ -1441,6 +1778,35 @@ export class Auth0Client {
     return pageRouteHandler(fnOrOpts);
   }
 
+  /**
+   * Protects an API route handler. Unauthenticated requests are automatically rejected with
+   * `401 Unauthorized`. Works with both App Router Route Handlers and Pages Router API routes.
+   *
+   * @param apiRoute - The handler function to protect.
+   *
+   * @example App Router
+   * ```ts
+   * // app/api/orders/route.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export const GET = auth0.withApiAuthRequired(async function handler(req) {
+   *   const session = await auth0.getSession();
+   *   return Response.json({ user: session!.user });
+   * });
+   * ```
+   *
+   * @example Pages Router
+   * ```ts
+   * // pages/api/orders.ts
+   * import { auth0 } from '@/lib/auth0';
+   *
+   * export default auth0.withApiAuthRequired(async function handler(req, res) {
+   *   const session = await auth0.getSession(req);
+   *   res.json({ user: session!.user });
+   * });
+   * ```
+   *
+   */
   withApiAuthRequired(
     apiRoute: withApiAuthRequired.AppRouteHandlerFn | NextApiHandler
   ) {
@@ -1604,43 +1970,33 @@ export class Auth0Client {
   }
 
   /**
-   * Creates a configured Fetcher instance for making authenticated API requests.
+   * Creates an authenticated HTTP client that automatically injects the user's access token
+   * as a Bearer header on every request and handles token refresh transparently.
    *
-   * This method creates a specialized HTTP client that handles:
-   * - Automatic access token retrieval and injection
-   * - DPoP (Demonstrating Proof-of-Possession) proof generation when enabled
-   * - Token refresh and session management
-   * - Error handling and retry logic for DPoP nonce errors
-   * - Base URL resolution for relative requests
+   * @param req - Request for session context. Pass `undefined` in App Router; required in Pages Router.
+   * @param options.baseUrl - Base URL for resolving relative paths, e.g. `"https://api.example.com"`.
+   * @param options.useDPoP - Enable DPoP for this fetcher instance, overriding the global setting.
+   * @param options.fetch - Custom fetch implementation (defaults to global `fetch`).
    *
-   * The fetcher provides a high-level interface for making requests to protected resources
-   * without manually handling authentication details.
+   * @returns A `Fetcher` instance. Call `fetcher.fetchWithAuth(path, init?)` to make authenticated requests.
    *
-   * @template TOutput - Response type that extends the standard Response interface
-   * @param req - Request object for session context (required for Pages Router, optional for App Router)
-   * @param options - Configuration options for the fetcher
-   * @param options.useDPoP - Enable DPoP for this fetcher instance (overrides global setting)
-   * @param options.baseUrl - Base URL for resolving relative requests
-   * @param options.getAccessToken - Custom access token factory function
-   * @param options.fetch - Custom fetch implementation
-   * @returns Promise that resolves to a configured Fetcher instance
-   * @throws AccessTokenError when no active session exists
+   * @throws `AccessTokenError` (`"missing_session"`) if the user is not authenticated.
    *
    * @example
-   * ```typescript
-   * import { auth0 } from "@/lib/auth0";
+   * ```ts
+   * // app/api/proxy/route.ts
+   * import { auth0 } from '@/lib/auth0';
    *
-   * const fetcher = await auth0.createFetcher(undefined, {
-   *   baseUrl: "https://api.example.com",
-   *   useDPoP: true
-   * });
+   * export async function GET() {
+   *   const fetcher = await auth0.createFetcher(undefined, {
+   *     baseUrl: 'https://api.example.com',
+   *   });
    *
-   * const response = await fetcher.fetchWithAuth("/users");
-   * const users = await response.json();
+   *   const res = await fetcher.fetchWithAuth('/users');
+   *   return Response.json(await res.json());
+   * }
    * ```
    *
-   * @see {@link Fetcher} for details on using the returned fetcher instance
-   * @see {@link FetcherMinimalConfig} for available configuration options
    */
   public async createFetcher<TOutput extends Response = Response>(
     req: PagesRouterRequest | NextRequest | Request | undefined,

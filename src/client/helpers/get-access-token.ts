@@ -2,81 +2,116 @@ import { AccessTokenError } from "../../errors/index.js";
 import { normalizeWithBasePath } from "../../utils/pathUtils.js";
 
 /**
- * Options for fetching an access token.
- *
- * **Important for Multi-API Applications**: When your application calls multiple APIs with different
- * audiences, you **must** specify the `audience` parameter to ensure the correct access token is retrieved.
- * Without specifying the audience, the default access token from the session will be used, which may be
- * intended for a different API.
- *
- * @example
- * ```typescript
- * // Single API - no audience needed (uses session token)
- * const token = await getAccessToken();
- *
- * // Multi-API - specify audience for correct token
- * const profileToken = await getAccessToken({
- *   audience: 'https://profile-api.example.com'
- * });
- * const ordersToken = await getAccessToken({
- *   audience: 'https://orders-api.example.com'
- * });
- * ```
+ * Configuration options for fetching an access token.
  */
 export type AccessTokenOptions = {
-  /**
-   * Additional scopes to request beyond those granted during login.
-   * Requires the Auth0 Application to be configured for Multi-Resource Refresh Tokens (MRRT).
-   *
-   * @example 'read:profile write:profile'
+  /** * The specific permissions you are requesting from the user. 
+   * @example "read:users write:orders"
    */
   scope?: string;
 
-  /**
-   * The unique identifier of the target API. This should match the API identifier configured in Auth0.
-   *
-   * **Critical for Multi-API Applications**: If your application calls multiple APIs, you must specify
-   * this parameter to ensure the correct access token is used for each API. Each API requires its own
-   * access token with the appropriate audience.
-   *
-   * **Configuration Requirement**: When using `audience` or `scope`, ensure that the audiences and scopes
-   * are part of your Auth0 Application's Refresh Token Policies. This requires configuring
-   * Multi-Resource Refresh Tokens (MRRT) in your Auth0 Application settings.
-   *
-   * @see https://auth0.com/docs/secure/tokens/refresh-tokens/multi-resource-refresh-token - Multi-Resource Refresh Tokens documentation
-   *
-   * @example 'https://api.example.com'
-   * @example 'https://orders-api.mycompany.com'
+  /** * The specific API you want to communicate with. 
+   * @example "https://api.stripe.com/v1"
    */
   audience?: string;
 
-  /**
-   * When true, returns the full response from the `/auth/access-token` endpoint
-   * instead of only the access token string.
-   *
+  /** * If true, returns the full token object (with expiration details) 
+   * instead of just the raw token string. 
    * @default false
    */
   includeFullResponse?: boolean;
 };
 
-type AccessTokenResponse = {
+/**
+ * The complete data payload returned by the authentication server.
+ */
+export type AccessTokenResponse = {
+  /** The actual JWT (JSON Web Token) string used for authorization. */
   token: string;
+  /** The permissions granted by this token. */
   scope?: string;
+  /** The exact timestamp (in seconds) when this token becomes invalid. */
   expires_at?: number;
+  /** The number of seconds until this token expires. */
   expires_in?: number;
+  /** The type of token returned (usually "Bearer"). */
   token_type?: string;
 };
 
-/**
- * Fetches an access token for the currently logged-in user.
- * @param options Options for fetching the access token, including optional audience and scope.
- * @returns The access token as a string, or the full token response when `includeFullResponse` is true.
- * @note Passing audience or scope relies on MRRT to be configured in your Auth0 Application.
- * @see https://auth0.com/docs/secure/tokens/refresh-tokens/multi-resource-refresh-token/configure-and-implement-multi-resource-refresh-token
- */
 export async function getAccessToken(
   options: AccessTokenOptions & { includeFullResponse: true }
 ): Promise<AccessTokenResponse>;
+/**
+ * Fetches a JWT access token for the logged-in user to authorize browser-to-API calls.
+ * Automatically refreshes the token if it has expired.
+ *
+ * **Prerequisite:** User must be logged in. Call from a Client Component only.
+ *
+ * @param options.scope - Permissions to request, space-separated. Must be a subset of the scopes granted at login. Example: `"read:orders write:orders"`
+ * @param options.audience - API identifier the token is issued for. Required when calling multiple APIs. Example: `"https://api.myapp.com"`
+ * @param options.includeFullResponse - Set `true` to return the full token object instead of just the JWT string. Default: `false`.
+ *
+ * @returns
+ * Default (`includeFullResponse` omitted or `false`): the raw JWT string:
+ * ```
+ * "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHw2NE..."
+ * ```
+ * When `includeFullResponse: true`:
+ * ```json
+ * {
+ *   "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHw2NE...",
+ *   "scope": "openid profile email read:orders",
+ *   "expires_at": 1716239022,
+ *   "expires_in": 86400,
+ *   "token_type": "Bearer"
+ * }
+ * ```
+ *
+ * @throws `AccessTokenError`. Check `error.code` to handle the cause:
+ * - `"missing_session"`: no active session, user must log in
+ * - `"missing_refresh_token"`: session has no refresh token, user must log in again
+ * - `"failed_to_refresh_token"`: Auth0 rejected the refresh, token expired or revoked
+ *
+ * @example
+ * ```ts
+ * // components/orders.tsx: fetch protected data from the browser
+ * import { getAccessToken } from '@auth0/nextjs-auth0/client';
+ *
+ * export default function Orders() {
+ *   async function loadOrders() {
+ *     const token = await getAccessToken();
+ *     // "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *
+ *     const res  = await fetch('https://api.myapp.com/orders', {
+ *       headers: { Authorization: `Bearer ${token}` },
+ *     });
+ *     const data = await res.json();
+ *     // { "orders": [ { "id": 1, "item": "Widget" }, ... ] }
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```ts
+ * // With full response: inspect expiry or token type before the request.
+ * const tokenData = await getAccessToken({ includeFullResponse: true });
+ * // {
+ * //   "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+ * //   "scope": "openid profile email",
+ * //   "expires_at": 1716239022,
+ * //   "expires_in": 86400,
+ * //   "token_type": "Bearer"
+ * // }
+ *
+ * await fetch('https://api.myapp.com/orders', {
+ *   headers: { Authorization: `${tokenData.token_type} ${tokenData.token}` },
+ * });
+ * ```
+ *
+ * @group Client
+ * @title Get Access Token
+ * @order 3
+ */
 export async function getAccessToken(
   options?: AccessTokenOptions & { includeFullResponse?: false }
 ): Promise<string>;

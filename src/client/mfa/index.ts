@@ -444,20 +444,114 @@ class ClientMfaClient implements MfaClient {
 }
 
 /**
- * Client-side MFA API singleton.
+ * Handles the MFA challenge flow after a login or token refresh requires a second factor.
+ *
+ * **Prerequisite:** You must have caught a `MfaRequiredError`. The `mfaToken` every method
+ * below requires comes from `error.mfa_token` on that error.
+ *
+ * **Flow:** catch `MfaRequiredError` → list authenticators → send challenge → verify code.
+ *
+ * ---
+ *
+ * **`mfa.getAuthenticators({ mfaToken })`**: Lists the user's enrolled MFA methods.
+ * ```json
+ * [
+ *   { "id": "totp|dev_abc123", "authenticatorType": "otp", "active": true },
+ *   { "id": "sms|dev_xyz456",  "authenticatorType": "oob", "oobChannel": "sms",
+ *     "active": true, "phoneNumber": "+1******7890" }
+ * ]
+ * ```
+ * Throws `MfaGetAuthenticatorsError` on failure.
+ *
+ * ---
+ *
+ * **`mfa.challenge({ mfaToken, challengeType, authenticatorId? })`**: Sends the challenge (e.g. SMS code).
+ * `challengeType`: `"otp"` (authenticator app) | `"oob"` (SMS / email / push notification).
+ * ```json
+ * { "challengeType": "oob", "oobCode": "Fe26.2**...", "bindingMethod": "prompt" }
+ * ```
+ * Throws `MfaChallengeError` on failure.
+ *
+ * ---
+ *
+ * **`mfa.verify(options)`**: Submits the code and completes authentication.
+ * Pass exactly one credential:
+ * ```ts
+ * { mfaToken, otp: '123456' }                              // Authenticator app code
+ * { mfaToken, oobCode: 'Fe26...', bindingCode: '654321' }  // SMS / email code
+ * { mfaToken, recoveryCode: 'ABCD-EFGH-IJKL' }             // Backup recovery code
+ * ```
+ * ```json
+ * {
+ *   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+ *   "token_type": "Bearer",
+ *   "expires_in": 86400,
+ *   "scope": "openid profile email"
+ * }
+ * ```
+ * Throws `MfaVerifyError` (wrong code) or `MfaRequiredError` (second factor required, chained MFA).
+ *
+ * ---
+ *
+ * **`mfa.enroll(options)`**: Enrolls a new MFA method during setup.
+ * ```ts
+ * { mfaToken, authenticatorTypes: ['otp'] }                           // Authenticator app
+ * { mfaToken, authenticatorTypes: ['oob'], oobChannels: ['sms'],      // SMS
+ *   phoneNumber: '+15551234567' }
+ * ```
+ * For OTP, the response includes `secret` and `barcodeUri` to render a QR code.
+ * Throws `MfaEnrollmentError` on failure.
+ *
+ * ---
+ *
+ * **Errors thrown by all methods:**
+ * | Error | `error.code` | Meaning |
+ * |---|---|---|
+ * | `MfaTokenExpiredError` | `"mfa_token_expired"` | `mfaToken` TTL exceeded, restart the MFA flow |
+ * | `MfaTokenInvalidError` | `"mfa_token_invalid"` | `mfaToken` is tampered or malformed |
+ *
+ * @group Client
+ * @title Multi-Factor Authentication
+ * @order 5
  *
  * @example
- * ```typescript
- * import { mfa } from '@auth0/nextjs-auth0/client';
+ * ```ts
+ * // Full MFA flow, triggered after catching MfaRequiredError
+ * import { getAccessToken }  from '@auth0/nextjs-auth0/client';
+ * import { mfa }             from '@auth0/nextjs-auth0/client';
+ * import { MfaRequiredError } from '@auth0/nextjs-auth0/errors';
  *
- * // List authenticators
- * const authenticators = await mfa.getAuthenticators({ mfaToken });
+ * try {
+ *   await getAccessToken();
+ * } catch (error) {
+ *   if (error instanceof MfaRequiredError) {
+ *     const mfaToken = error.mfa_token; // encrypted token from the error
  *
- * // Initiate challenge
- * const challenge = await mfa.challenge({ mfaToken, challengeType: 'oob' });
+ *     // Step 1: see what MFA methods the user has enrolled
+ *     const authenticators = await mfa.getAuthenticators({ mfaToken });
+ *     // [{ "id": "sms|dev_xyz456", "authenticatorType": "oob", "oobChannel": "sms" }]
  *
- * // Verify and complete
- * const tokens = await mfa.verify({ mfaToken, otp: '123456' });
+ *     // Step 2: send the challenge (SMS code in this case)
+ *     const challenge = await mfa.challenge({
+ *       mfaToken,
+ *       challengeType:   'oob',
+ *       authenticatorId: 'sms|dev_xyz456',
+ *     });
+ *     // { "challengeType": "oob", "oobCode": "Fe26.2**...", "bindingMethod": "prompt" }
+ *
+ *     // Step 3: verify the code the user typed in
+ *     const tokens = await mfa.verify({
+ *       mfaToken,
+ *       oobCode:     challenge.oobCode,
+ *       bindingCode: '654321',            // entered by the user
+ *     });
+ *     // {
+ *     //   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+ *     //   "token_type": "Bearer",
+ *     //   "expires_in": 86400
+ *     // }
+ *   }
+ * }
  * ```
  */
 export const mfa: MfaClient = new ClientMfaClient();

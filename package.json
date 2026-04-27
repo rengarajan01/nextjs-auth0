@@ -12,9 +12,12 @@
     "prepack": "pnpm run build",
     "install:examples": "pnpm install --filter ./examples/with-next-intl --shamefully-hoist && pnpm install --filter ./examples/with-shadcn --shamefully-hoist",
     "docs": "typedoc",
+    "docs:serve": "serve docs",
+    "docs:preview": "pnpm run docs && pnpm run docs:serve",
     "lint": "tsc --noEmit && tsc --noEmit --project tsconfig.test.json && eslint ./src",
     "lint:fix": "tsc --noEmit && tsc --noEmit --project tsconfig.test.json && eslint --fix ./src",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "docs:build": "typedoc && node scripts/build-docs.js"
   },
   "repository": {
     "type": "git",
@@ -54,6 +57,7 @@
     "msw": "^2.7.5",
     "next": "15.2.8",
     "prettier": "^3.3.3",
+    "serve": "^14.2.6",
     "typedoc": "^0.28.4",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.23.0",

@@ -1,3 +1,10 @@
+/**
+ * Options for `startInteractiveLogin()`.
+ *
+ * @group Server
+ * @title Start Interactive Login Options
+ * @order 50
+ */
 export interface StartInteractiveLoginOptions {
   /**
    * Authorization parameters to be passed to the authorization server.
@@ -9,6 +16,14 @@ export interface StartInteractiveLoginOptions {
   returnTo?: string;
 }
 
+/**
+ * Authorization parameters passed to the Auth0 `/authorize` endpoint.
+ * Use these to control the login experience: scopes, audience, organization, and more.
+ *
+ * @group Server
+ * @title Authorization Parameters
+ * @order 51
+ */
 export interface AuthorizationParameters {
   /**
    * The scope of the access request, expressed as a list of space-delimited, case-sensitive strings.

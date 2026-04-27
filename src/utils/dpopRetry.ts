@@ -11,27 +11,31 @@ export function isEdgeRuntime(): boolean {
 }
 
 /**
- * Generates a new ES256 key pair for DPoP (Demonstrating Proof-of-Possession) operations.
+ * Generates an ES256 key pair for DPoP (Demonstrating Proof-of-Possession).
+ * Pass the result to `Auth0Client` via the `dpopKeyPair` option to bind access tokens
+ * cryptographically to the client, preventing token theft and replay attacks.
  *
- * This function creates a cryptographically secure ES256 key pair suitable for DPoP proof
- * generation. The generated keys use the P-256 elliptic curve with SHA-256 hashing,
- * which is the required algorithm for DPoP as specified in RFC 9449.
+ * Call this once when your application starts and reuse the same key pair for the lifetime
+ * of the `Auth0Client` instance.
  *
- * @returns Promise that resolves to a DpopKeyPair containing the private and public keys
+ * @returns A `DpopKeyPair` containing ES256 `publicKey` and `privateKey` as `CryptoKey` objects.
  *
  * @example
- * ```typescript
- * import { generateDpopKeyPair } from "@auth0/nextjs-auth0/server";
+ * ```ts
+ * // lib/auth0.ts
+ * import { Auth0Client, generateDpopKeyPair } from '@auth0/nextjs-auth0/server';
  *
- * const keyPair = await generateDpopKeyPair();
+ * const dpopKeyPair = await generateDpopKeyPair();
  *
- * const auth0 = new Auth0Client({
+ * export const auth0 = new Auth0Client({
  *   useDPoP: true,
- *   dpopKeyPair: keyPair
+ *   dpopKeyPair,
  * });
  * ```
  *
- * @see {@link https://datatracker.ietf.org/doc/html/rfc9449 | RFC 9449: OAuth 2.0 Demonstrating Proof-of-Possession at the Application Layer (DPoP)}
+ * @group Server
+ * @title Generate DPoP Key Pair
+ * @order 18
  */
 export async function generateDpopKeyPair(): Promise<DpopKeyPair> {
   return await generateKeyPair("ES256");
